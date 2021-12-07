@@ -10,7 +10,7 @@ DEVICE  = atmega328
 F_CPU   = 16000000	# in Hz
 DEFINES =
 
-CFLAGS  = $(DEFINES) -Iusbdrv -I. -DDEBUG_LEVEL=0
+CFLAGS  = $(DEFINES) -Iusbdrv -I. -DDEBUG_LEVEL=0 -Ilibs
 OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o main.o
 
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) $(CRCFLAG) $(CFLAGS) -mmcu=$(DEVICE)
