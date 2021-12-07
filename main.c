@@ -59,31 +59,24 @@
 #define NORMAL 0
 #define CONFIG 1
 
-// Buttons that are on PORTB
-#define BTNS_PINB_LEN 4
-const char BTNS_PINB[BTNS_PINB_LEN] = {
-    PB3, // Button 0
-    PB2, // Button 1
-    PB1, // Button 2
-    PB0 // Button 3
+struct btnInfo {
+    volatile unsigned char *pin;
+    unsigned char btn;
 };
 
-// Buttons that are on PORTC
-#define BTNS_PINC_LEN 0
-const char BTNS_PINC[BTNS_PINC_LEN] = {};
-
-// Buttons that are on PORTD
-#define BTNS_PIND_LEN 0
-const char BTNS_PIND[BTNS_PIND_LEN] = {
-    PD7, // Button 4
-    PD6, // Button 5
-    PD5, // Button 6
-    PD4, // Button 7
-    PD1, // Button 8
-    PD0 // Button 9
+#define BTNS_LEN 10
+const struct btnInfo BTNS[BTNS_LEN] = {
+    { .pin = &PINB, .btn = PB3 }, // Button 0
+    { .pin = &PINB, .btn = PB2 }, // Button 1
+    { .pin = &PINB, .btn = PB1 }, // Button 2
+    { .pin = &PINB, .btn = PB0 }, // Button 3
+    { .pin = &PIND, .btn = PD7 }, // Button 4
+    { .pin = &PIND, .btn = PD6 }, // Button 5
+    { .pin = &PIND, .btn = PD5 }, // Button 6
+    { .pin = &PIND, .btn = PD4 }, // Button 7
+    { .pin = &PIND, .btn = PD1 }, // Button 8
+    { .pin = &PIND, .btn = PD0 }, // Button 9
 };
-
-void config() { }
 
 /* Function to turn on nano's integrated led */
 void nano_led() {
@@ -99,35 +92,12 @@ void nano_led() {
  * not a button pressed it returns -1; */
 int poll_btns() {
     int btnID = 0;
-    // Check buttons PORTB 
-    for (int i = 0; i < BTNS_PINB_LEN; i++) {
-        if (! ((PINB >> BTNS_PINB[i]) & 1) ) {
-            _delay_us(20);
-            while (! ((PINB >> BTNS_PINB[i]) & 1) );
-            nano_led();
-            return btnID;
-        }
-        btnID++;
-    }
 
-    // Check buttons PORTC
-    for (int i = 0; i < BTNS_PINC_LEN; i++) {
-        if (! ((PINC >> BTNS_PINC[i]) & 1) ) {
+    // Check buttons
+    for (int i = 0; i < BTNS_LEN; i++) {
+        if (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) {
             _delay_us(20);
-            while (! ((PINC >> BTNS_PINC[i]) & 1) );
-            _delay_us(20);
-            nano_led();
-            return btnID;
-        }
-        btnID++;
-    }
-
-    // Check buttons PORTD
-    for (int i = 0; i < BTNS_PIND_LEN; i++) {
-        if (! ((PIND >> BTNS_PIND[i]) & 1) ) {
-            _delay_us(20);
-            while (! ((PIND >> BTNS_PIND[i]) & 1) );
-            _delay_us(20);
+            while (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) );
             nano_led();
             return btnID;
         }
@@ -165,32 +135,27 @@ int main(int argc, char *argv[]) {
     go_home();
     clear_display();
     introMessage();
+
+    normalModeMessage();
+
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
-        _delay_ms(100);
+        _delay_ms(50);
         PORTB &= ~(_BV(PB5));
-        _delay_ms(100);
+        _delay_ms(50);
     }
 
     while(1) {  
         if(mode==NORMAL){
-            normalModeMessage();
-            // Check Config Button
-            if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) {
-                // TODO: Enter config mode
-            }
-
-            if (!poll(BTN_CONFIG_PIN, BTN_CONFIG)) { // If the button is pressed
-                _delay_us(20); // Bounce-back delay
+            if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
                 while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
-                _delay_us(20); // Bounce-back delay
                 configModeMessage();
                 mode=CONFIG;
             }
 
             // Example of waiting until a btn is pressed
             btnPress = -1;
-            while ( (btnPress = poll_btns()) == -1 ) { _delay_us(20); }
+            while ( (btnPress = poll_btns()) == -1 ) { }
 
         }else{
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)){
