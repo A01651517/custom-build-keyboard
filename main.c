@@ -27,59 +27,61 @@
  */
 
 #include <stdio.h>
-#include <avr/io.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
 
 #define F_CPU 16000000 // 16 MhZ
 #include <util/delay.h>
+
 #include "usbdrv.h"
+#include "io.h"
 
 #define LCD_E_PORT PORTC
 #define LCD_RS_PORT PORTC
 #define LCD_E PC1
 #define LCD_RS PC0
-#define LCD_0_PORT PORTC
-#define LCD_1_PORT PORTC
-#define LCD_2_PORT PORTC
-#define LCD_3_PORT PORTC
-#define LCD_0 PC2
-#define LCD_1 PC3
-#define LCD_2 PC4
-#define LCD_3 PC5
-#include "./lcd.h"
+#define LCD_4_PORT PORTC
+#define LCD_5_PORT PORTC
+#define LCD_6_PORT PORTC
+#define LCD_7_PORT PORTC
+#define LCD_4 PC2
+#define LCD_5 PC3
+#define LCD_6 PC4
+#define LCD_7 PC5
+#include "lcd.h"
 
 #define NUM_KEYS 10
 
-#define BTN_CONFIG_PORT PORTB
+#define BTN_CONFIG_PIN PINB
 #define BTN_CONFIG PB4
-
-/*
-#define BTN_0_PORT PORTB
-#define BTN_0 PB3
-
-#define BTN_R0_PORT PORTB
-#define BTN_R00 PB2
-#define BTN_R01 PB1
-#define BTN_R02 PB0
-
-#define BTN_R1_PORT PORTD
-#define BTN_R10 PD7
-#define BTN_R11 PD6
-#define BTN_R12 PD5
-
-#define BTN_R2_PORT PORTD
-#define BTN_R20 PD4
-#define BTN_R21 PD1
-#define BTN_R22 PD0
-*/
 
 #define USB_PORT PORTD
 #define USB_DP PD2 // USB D+
 #define USB_DM PD3 // USB D-
 
-#define BTNS_PORTS [ PORTB, PORTB, PORTB, PORTB, PORTD, PORTD, PORTD, PORTD, PORTD, PORTD ]
-#define BTNS [PB3, PB2, PB1, PB0, PD7, PD6, PD5, PD4, PD1, PD0 ]
+// Buttons that are on PORTB
+#define BTNS_PINB_LEN 4
+const char BTNS_PINB[BTNS_PINB_LEN] = {
+    PB3, // Button 0
+    PB2, // Button 1
+    PB1, // Button 2
+    PB0 // Button 3
+};
+
+// Buttons that are on PORTC
+#define BTNS_PINC_LEN 0
+const char BTNS_PINC[BTNS_PINC_LEN] = {};
+
+// Buttons that are on PORTD
+#define BTNS_PIND_LEN 0
+const char BTNS_PIND[BTNS_PIND_LEN] = {
+    PD7, // Button 4
+    PD6, // Button 5
+    PD5, // Button 6
+    PD4, // Button 7
+    PD1, // Button 8
+    PD0 // Button 9
+};
 
 static uchar reportBuffer[2]; /* HID Buffer */
 static uchar idleRate;
@@ -121,9 +123,9 @@ static uchar idleRate;
 #define KEY_9       38
 #define KEY_0       39
 
-#define KEY_TOP     82
+#define KEY_UP      82
 #define KEY_RIGHT   79
-#define KEY_BOTTOM  81
+#define KEY_DOWN    81
 #define KEY_LEFT    80
 
 /* Keyboard usage values, see usb.org's HID-usage-tables document, chapter
@@ -209,12 +211,23 @@ static void init() {
     DDRB = (1<<PB0) | (1<<PB1) | (1<<PB2) | (1<<PB3) | (1<<PB4);
     // LED OUTPUT
     DDRC = (1<<PC0) | (1<<PC1) | (1<<PC2) | (1<<PC3) | (1<<PC4) | (1<<PC5);
-    // BTN R1, R2 OUTPUT
-    DDRD = (1<<PD0) | (1<<PD1) | (1<<PD4) | (1<<PD5) | (1<<PD6) | (1<<PD7);
+
+    // BTN CONFIG, 0, R0 PULLUP
+    PORTB = (1<<PB0) | (1<<PB1) | (1<<PB2) | (1<<PB3) | (1<<PB4) | (1<<PB5);
+    // BTN R1, R2 PULLUP
+    PORTD = (1<<PD0) | (1<<PD1) | (1<<PD4) | (1<<PD5) | (1<<PD6) | (1<<PD7);
 
     // Wait half a second for the microcontroller to reboot after reset
     for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
 }
+
+static void nano_led() {
+    PORTB |= _BV(PB5);
+    _delay_ms(500);
+    PORTB &= ~(_BV(PB5));
+    _delay_ms(500);
+}
+
 
 void config() { }
 
@@ -222,6 +235,14 @@ void print_btn(int i) { }
 
 int main(int argc, char *argv[]) {
     init();
+
+    for (int i = 0; i < 5; i++) {
+        PORTB |= _BV(PB5);
+        _delay_ms(100);
+        PORTB &= ~(_BV(PB5));
+        _delay_ms(100);
+    }
+
     // Turn on the watchdog timer with 2 seconds
     wdt_enable(WDTO_2S);
 
@@ -229,16 +250,27 @@ int main(int argc, char *argv[]) {
         wdt_reset();
 
         // Check Config Button
-        if ( (BTN_CONFIG_PORT >> BTN_CONFIG) & 1) {
+        if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) {
             // TODO: Enter config mode
         }
 
-        // Check buttons
-        for (int i = 0; i < 10; i++) {
-            if ( (BTNS_PORT[i] >> BTNS[i]) & 1)
+        // Check buttons PORTB 
+        for (int i = 0; i < BTNS_PINB_LEN; i++)
+            if (! ((PINB >> BTNS_PINB[i]) & 1) )
                 // TODO: Call button input
-                print_btn(i);
-        }
+                nano_led();
+
+        // Check buttons PORTC
+        for (int i = 0; i < BTNS_PINC_LEN; i++)
+            if (! ((PINC >> BTNS_PINC[i]) & 1) )
+                // TODO: Call button input
+                nano_led();
+
+        // Check buttons PORTD
+        for (int i = 0; i < BTNS_PIND_LEN; i++)
+            if (! ((PINC >> BTNS_PIND[i]) & 1) )
+                // TODO: Call button input
+                nano_led();
     }
     return 0;
 }
