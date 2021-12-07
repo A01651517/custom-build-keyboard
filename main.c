@@ -184,20 +184,21 @@ static uint pressedKey = 0;
 
 static const uchar keys[NUM_KEYS + 1][2] = {
     {0, 0}, // Reserved (no event)
-    {MOD_SHIFT_LEFT, KEY_A},
-    {NO_MOD, KEY_2},
-    {NO_MOD, KEY_3},
-    {NO_MOD, KEY_4},
-    {NO_MOD, KEY_5},
-    {NO_MOD, KEY_6},
-    {NO_MOD, KEY_7},
-    {NO_MOD, KEY_8},
-    {NO_MOD, KEY_9},
-    {NO_MOD, KEY_0},
+    {NO_MOD, (uchar) KEY_1},
+    {NO_MOD, (uchar) KEY_2},
+    {NO_MOD, (uchar) KEY_3},
+    {NO_MOD, (uchar) KEY_4},
+    {NO_MOD, (uchar) KEY_5},
+    {NO_MOD, (uchar) KEY_6},
+    {NO_MOD, (uchar) KEY_7},
+    {NO_MOD, (uchar) KEY_8},
+    {NO_MOD, (uchar) KEY_9},
+    {NO_MOD, (uchar) KEY_0}
 };
 
 static void updateReportBuffer(uint key) {
-    *reportBuffer = *keys[key];
+    reportBuffer[0] = keys[key][0];
+    reportBuffer[1] = keys[key][1];
 }
 
 /* Reserved function ran by the V-USB driver for the Control endpoint */
@@ -212,12 +213,12 @@ uchar usbFunctionSetup(uchar data[8]) {
                 // We update the report buffer
                 updateReportBuffer(pressedKey);
                 // We set the reserved V-USB pointer to the report buffer
-                usbMsgPtr = (short uint) reportBuffer;
+                usbMsgPtr = reportBuffer;
                 return sizeof(reportBuffer);
             // We share our idle rate with the host
             case USBRQ_HID_GET_IDLE:
                 // Send the delay to the computer
-                usbMsgPtr = (short uint) &idleRate;
+                usbMsgPtr = &idleRate;
                 return 1;
             // We get the idle rate from the host
             case USBRQ_HID_SET_IDLE:
@@ -253,7 +254,7 @@ static void pollButtons (const uchar* btns, uint btns_len, uchar pin) {
     for (int i = 0; i < btns_len; i++) {
         if (!((pin >> btns[i]) & 1)) {
             pressedKey = 1;
-            nano_led();
+            //nano_led();
         }
     }
 }
@@ -261,25 +262,23 @@ static void pollButtons (const uchar* btns, uint btns_len, uchar pin) {
 void config() { }
 
 int main(int argc, char *argv[]) {
-    uint lastKey = 0;
-
     // Turn on the watchdog timer with 2 seconds
     wdt_enable(WDTO_2S);
     init();
     odDebugInit();
     usbInit(); // Reserved V-USB procedure
     // Wait half a second for the microcontroller to reboot after reset
-    for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
+    //for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
     sei(); // Turn on interrupts
     DBG1(0x00, 0, 0);
 
-    for (int i = 0; i < 5; i++) {
-        wdt_reset();
-        PORTB |= _BV(PB5);
-        _delay_ms(100);
-        PORTB &= ~(_BV(PB5));
-        _delay_ms(100);
-    }
+    // for (int i = 0; i < 5; i++) {
+    //     wdt_reset();
+    //     PORTB |= _BV(PB5);
+    //     _delay_ms(100);
+    //     PORTB &= ~(_BV(PB5));
+    //     _delay_ms(100);
+    // }
 
 
     while(1) {
@@ -295,14 +294,11 @@ int main(int argc, char *argv[]) {
         pollButtons(BTNS_PINC, BTNS_PINC_LEN, PINC);
         pollButtons(BTNS_PIND, BTNS_PIND_LEN, PIND);
 
-        if (lastKey != pressedKey) {
-            lastKey = pressedKey;
-        }
-
         if (usbInterruptIsReady()) {
-            updateReportBuffer(lastKey);
+            updateReportBuffer(pressedKey);
             usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
         }
+        pressedKey = 0;
     }
     return 0;
 }
