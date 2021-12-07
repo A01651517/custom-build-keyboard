@@ -178,6 +178,7 @@ int main(int argc, char *argv[]) {
             }
             while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
             _delay_us(20); // Bounce-back delay
+            clear_display();
             normalModeMessage();
             mode=NORMAL;
         }
