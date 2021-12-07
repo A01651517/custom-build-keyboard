@@ -23,14 +23,18 @@
  *                   -----------
  *
  * Description:
- * Counter plus another animation.
+ * USB Keypad with assignable keys HID
+ *
+ * References:
+ * HIDKeys - An Example USB HID
+ *  https://www.obdev.at/products/vusb/hidkeys.html
  */
 
+#define uint unsigned int
 #include <stdio.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
-
-#define F_CPU 16000000 // 16 MhZ
+#include <avr/interrupt.h>
 #include <util/delay.h>
 
 #include "usbdrv.h"
@@ -61,7 +65,7 @@
 
 // Buttons that are on PORTB
 #define BTNS_PINB_LEN 4
-const char BTNS_PINB[BTNS_PINB_LEN] = {
+const uchar BTNS_PINB[BTNS_PINB_LEN] = {
     PB3, // Button 0
     PB2, // Button 1
     PB1, // Button 2
@@ -70,11 +74,11 @@ const char BTNS_PINB[BTNS_PINB_LEN] = {
 
 // Buttons that are on PORTC
 #define BTNS_PINC_LEN 0
-const char BTNS_PINC[BTNS_PINC_LEN] = {};
+const uchar BTNS_PINC[BTNS_PINC_LEN] = {};
 
 // Buttons that are on PORTD
-#define BTNS_PIND_LEN 0
-const char BTNS_PIND[BTNS_PIND_LEN] = {
+#define BTNS_PIND_LEN 6
+const uchar BTNS_PIND[BTNS_PIND_LEN] = {
     PD7, // Button 4
     PD6, // Button 5
     PD5, // Button 6
@@ -83,9 +87,41 @@ const char BTNS_PIND[BTNS_PIND_LEN] = {
     PD0 // Button 9
 };
 
-static uchar reportBuffer[2]; /* HID Buffer */
-static uchar idleRate;
+/* We use a simplifed keyboard report descriptor which does not support the
+ * boot protocol. We don't allow setting status LEDs and we only allow one
+ * simultaneous key press (except modifiers). We can therefore use short
+ * 2 byte input reports.
+ * The report descriptor has been created with usb.org's "HID Descriptor Tool"
+ * which can be downloaded from http://www.usb.org/developers/hidpage/.
+ * Redundant entries (such as LOGICAL_MINIMUM and USAGE_PAGE) have been omitted
+ * for the second INPUT item.
+ */
+const PROGMEM char usbHidReportDescriptor[35] = {   /* USB report descriptor */
+    0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
+    0x09, 0x06,                    // USAGE (Keyboard)
+    0xa1, 0x01,                    // COLLECTION (Application)
+    0x05, 0x07,                    //   USAGE_PAGE (Keyboard)
+    0x19, 0xe0,                    //   USAGE_MINIMUM (Keyboard LeftControl)
+    0x29, 0xe7,                    //   USAGE_MAXIMUM (Keyboard Right GUI)
+    0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
+    0x25, 0x01,                    //   LOGICAL_MAXIMUM (1)
+    0x75, 0x01,                    //   REPORT_SIZE (1)
+    0x95, 0x08,                    //   REPORT_COUNT (8)
+    0x81, 0x02,                    //   INPUT (Data,Var,Abs)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0x75, 0x08,                    //   REPORT_SIZE (8)
+    0x25, 0x65,                    //   LOGICAL_MAXIMUM (101)
+    0x19, 0x00,                    //   USAGE_MINIMUM (Reserved (no event indicated))
+    0x29, 0x65,                    //   USAGE_MAXIMUM (Keyboard Application)
+    0x81, 0x00,                    //   INPUT (Data,Array,Abs)
+    0xc0                           // END_COLLECTION
+};
 
+/**
+ * Official HID key values for keyboard
+ * devices
+ * https://usb.org/sites/default/files/hut1_2.pdf
+ */
 #define KEY_A       4
 #define KEY_B       5
 #define KEY_C       6
@@ -131,6 +167,7 @@ static uchar idleRate;
 /* Keyboard usage values, see usb.org's HID-usage-tables document, chapter
  * 10 Keyboard/Keypad Page for more codes.
  */
+#define NO_MOD 0
 #define MOD_CONTROL_LEFT    (1<<0)
 #define MOD_SHIFT_LEFT      (1<<1)
 #define MOD_ALT_LEFT        (1<<2)
@@ -140,63 +177,48 @@ static uchar idleRate;
 #define MOD_ALT_RIGHT       (1<<6)
 #define MOD_GUI_RIGHT       (1<<7)
 
-static const uchar keys[NUM_KEYS + 1][2] PROGMEM = {
-    {0, 0},
-    {0, KEY_1},
-    {0, KEY_2},
-    {0, KEY_3},
-    {0, KEY_4},
-    {0, KEY_5},
-    {0, KEY_6},
-    {0, KEY_7},
-    {0, KEY_8},
-    {0, KEY_9},
-    {0, KEY_0},
+static uchar reportBuffer[2]; /* HID Buffer */
+static uchar idleRate; /* HID Idle Rate */
+static uint pressedKey = 0;
+
+static const uchar keys[NUM_KEYS + 1][2] = {
+    {0, 0}, // Reserved (no event)
+    {NO_MOD, KEY_1},
+    {NO_MOD, KEY_2},
+    {NO_MOD, KEY_3},
+    {NO_MOD, KEY_4},
+    {NO_MOD, KEY_5},
+    {NO_MOD, KEY_6},
+    {NO_MOD, KEY_7},
+    {NO_MOD, KEY_8},
+    {NO_MOD, KEY_9},
+    {NO_MOD, KEY_0},
+};
+
+static void updateReportBuffer(uint key) {
+    *reportBuffer = *keys[key];
 }
 
-const PROGMEM char usbHidReportDescriptor[35] = {   /* USB report descriptor */
-    0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
-    0x09, 0x06,                    // USAGE (Keyboard)
-    0xa1, 0x01,                    // COLLECTION (Application)
-    0x05, 0x07,                    //   USAGE_PAGE (Keyboard)
-    0x19, 0xe0,                    //   USAGE_MINIMUM (Keyboard LeftControl)
-    0x29, 0xe7,                    //   USAGE_MAXIMUM (Keyboard Right GUI)
-    0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
-    0x25, 0x01,                    //   LOGICAL_MAXIMUM (1)
-    0x75, 0x01,                    //   REPORT_SIZE (1)
-    0x95, 0x08,                    //   REPORT_COUNT (8)
-    0x81, 0x02,                    //   INPUT (Data,Var,Abs)
-    0x95, 0x01,                    //   REPORT_COUNT (1)
-    0x75, 0x08,                    //   REPORT_SIZE (8)
-    0x25, 0x65,                    //   LOGICAL_MAXIMUM (101)
-    0x19, 0x00,                    //   USAGE_MINIMUM (Reserved (no event indicated))
-    0x29, 0x65,                    //   USAGE_MAXIMUM (Keyboard Application)
-    0x81, 0x00,                    //   INPUT (Data,Ary,Abs)
-    0xc0                           // END_COLLECTION
-};
-/* We use a simplifed keyboard report descriptor which does not support the
- * boot protocol. We don't allow setting status LEDs and we only allow one
- * simultaneous key press (except modifiers). We can therefore use short
- * 2 byte input reports.
- * The report descriptor has been created with usb.org's "HID Descriptor Tool"
- * which can be downloaded from http://www.usb.org/developers/hidpage/.
- * Redundant entries (such as LOGICAL_MINIMUM and USAGE_PAGE) have been omitted
- * for the second INPUT item.
- */
-
-/* Reserved function ran by the V-USB driver for the control USB endpoint */
+/* Reserved function ran by the V-USB driver for the Control endpoint */
 uchar usbFunctionSetup(uchar data[8]) {
+    // We cast the data request
     usbRequest_t *request = (void *)data;
-    usbMsgPtr = reportBuffer; // Reserved pointer to the transfer data
+    // We make sure that the request is an HID class request
     if ((request->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS) {
         switch (request->bRequest) {
+            // We send the last pressed key
             case USBRQ_HID_GET_REPORT:
-                // Send the pressed key to the computer
-                return 1;
+                // We update the report buffer
+                updateReportBuffer(pressedKey);
+                // We set the reserved V-USB pointer to the report buffer
+                usbMsgPtr = (short uint) reportBuffer;
+                return sizeof(reportBuffer);
+            // We share our idle rate with the host
             case USBRQ_HID_GET_IDLE:
                 // Send the delay to the computer
-                usbMsgPtr = &idleRate;
+                usbMsgPtr = (short uint) &idleRate;
                 return 1;
+            // We get the idle rate from the host
             case USBRQ_HID_SET_IDLE:
                  // Get the default delay from the computer
                 idleRate = request->wValue.bytes[1];
@@ -228,13 +250,26 @@ static void nano_led() {
     _delay_ms(500);
 }
 
+static void pollButtons (const uchar* btns, uint btns_len, uchar pin) {
+    for (int i = 0; i < btns_len; i++) {
+        if (!((pin >> btns[i]) & 1)) {
+            pressedKey = 1;
+            nano_led();
+        }
+    }
+}
 
 void config() { }
 
-void print_btn(int i) { }
-
 int main(int argc, char *argv[]) {
+    uint lastKey = 0;
+    uint newKeyPress = 0;
+
+    // Turn on the watchdog timer with 2 seconds
+    wdt_enable(WDTO_2S);
     init();
+    usbInit(); // Reserved V-USB procedure
+    sei(); // Turn on interrupts
 
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
@@ -243,34 +278,30 @@ int main(int argc, char *argv[]) {
         _delay_ms(100);
     }
 
-    // Turn on the watchdog timer with 2 seconds
-    wdt_enable(WDTO_2S);
 
     while(1) {
         wdt_reset();
+        usbPoll();
 
         // Check Config Button
         if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) {
             // TODO: Enter config mode
         }
 
-        // Check buttons PORTB 
-        for (int i = 0; i < BTNS_PINB_LEN; i++)
-            if (! ((PINB >> BTNS_PINB[i]) & 1) )
-                // TODO: Call button input
-                nano_led();
+        pollButtons(BTNS_PINB, BTNS_PINB_LEN, PINB);
+        pollButtons(BTNS_PINC, BTNS_PINC_LEN, PINC);
+        pollButtons(BTNS_PIND, BTNS_PIND_LEN, PIND);
 
-        // Check buttons PORTC
-        for (int i = 0; i < BTNS_PINC_LEN; i++)
-            if (! ((PINC >> BTNS_PINC[i]) & 1) )
-                // TODO: Call button input
-                nano_led();
+        if (lastKey != pressedKey) {
+            lastKey = pressedKey;
+            newKeyPress = 1;
+        }
 
-        // Check buttons PORTD
-        for (int i = 0; i < BTNS_PIND_LEN; i++)
-            if (! ((PINC >> BTNS_PIND[i]) & 1) )
-                // TODO: Call button input
-                nano_led();
+        if (newKeyPress && usbInterruptIsReady()) {
+            newKeyPress = 0;
+            updateReportBuffer(lastKey);
+            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+        }
     }
     return 0;
 }
