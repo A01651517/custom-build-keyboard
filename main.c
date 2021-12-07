@@ -85,11 +85,56 @@ const char BTNS_PIND[BTNS_PIND_LEN] = {
 
 void config() { }
 
+/* Function to turn on nano's integrated led */
 void nano_led() {
     PORTB |= _BV(PB5);
     _delay_ms(500);
     PORTB &= ~(_BV(PB5));
     _delay_ms(500);
+}
+
+/* Function to search for the first button that is pressed.
+ * It assumes that the grid is connected in order.
+ * @returns de number of the first button that is pressed [0-9]. If there is
+ * not a button pressed it returns -1; */
+int poll_btns() {
+    int btnID = 0;
+    // Check buttons PORTB 
+    for (int i = 0; i < BTNS_PINB_LEN; i++) {
+        if (! ((PINB >> BTNS_PINB[i]) & 1) ) {
+            _delay_us(20);
+            while (! ((PINB >> BTNS_PINB[i]) & 1) );
+            nano_led();
+            return btnID;
+        }
+        btnID++;
+    }
+
+    // Check buttons PORTC
+    for (int i = 0; i < BTNS_PINC_LEN; i++) {
+        if (! ((PINC >> BTNS_PINC[i]) & 1) ) {
+            _delay_us(20);
+            while (! ((PINC >> BTNS_PINC[i]) & 1) );
+            _delay_us(20);
+            nano_led();
+            return btnID;
+        }
+        btnID++;
+    }
+
+    // Check buttons PORTD
+    for (int i = 0; i < BTNS_PIND_LEN; i++) {
+        if (! ((PIND >> BTNS_PIND[i]) & 1) ) {
+            _delay_us(20);
+            while (! ((PIND >> BTNS_PIND[i]) & 1) );
+            _delay_us(20);
+            nano_led();
+            return btnID;
+        }
+        btnID++;
+    }
+
+    return -1;
 }
 
 unsigned int mode = NORMAL;
@@ -104,6 +149,8 @@ char alpha[37]={'a','b','c','d','e',
 char * nums[11]={"CERO","UNO","DOS","TRES","CUATRO","CINCO","SEIS","SIETE","OCHO","NUEVE"};
 
 int main(int argc, char *argv[]) {
+    int btnPress;
+
     // LED OUTPUT
     DDRC = (1<<PC0) | (1<<PC1) | (1<<PC2) | (1<<PC3) | (1<<PC4) | (1<<PC5);
 
@@ -141,23 +188,10 @@ int main(int argc, char *argv[]) {
                 mode=CONFIG;
             }
 
-            // Check buttons PORTB 
-            for (int i = 0; i < BTNS_PINB_LEN; i++)
-                if (! ((PINB >> BTNS_PINB[i]) & 1) )
-                    // TODO: Call button input
-                    nano_led();
+            // Example of waiting until a btn is pressed
+            btnPress = -1;
+            while ( (btnPress = poll_btns()) == -1 ) { _delay_us(20); }
 
-            // Check buttons PORTC
-            for (int i = 0; i < BTNS_PINC_LEN; i++)
-                if (! ((PINC >> BTNS_PINC[i]) & 1) )
-                    // TODO: Call button input
-                    nano_led();
-
-            // Check buttons PORTD
-            for (int i = 0; i < BTNS_PIND_LEN; i++)
-                if (! ((PINC >> BTNS_PIND[i]) & 1) )
-                    // TODO: Call button input
-                    nano_led();
         }else{
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)){
                 if (!poll(PINB, PINB3)) { // If the button is pressed
