@@ -11,8 +11,6 @@ void normalModeMessage(){
     write_str("      Modo     ");
     go_to(1,0);
     write_str("     Normal    ");
-    _delay_ms(3000); 
-    clear_display();
     go_home();
 }
 
