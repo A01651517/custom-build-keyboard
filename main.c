@@ -10,10 +10,10 @@
  *                   |    A    | D10|PB2 -> BTN_R00
  * LCD_RS <- PC0|A00 |    R    | D09|PB1 -> BTN_R01
  *  LCD_E <- PC1|A01 |    D    | D08|PB0 -> BTN_R02
- *  LCD_0 <- PC2|A02 |    U    | D07|PD7 -> BTN_R10
- *  LCD_1 <- PC3|A03 |    I    | D06|PD6 -> BTN_R11
- *  LCD_2 <- PC4|A04 |    N    | D05|PD5 -> BTN_R12
- *  LCD_3 <- PC5|A05 |    O    | D04|PD4 -> BTN_R20
+ *  LCD_7 <- PC2|A02 |    U    | D07|PD7 -> BTN_R10
+ *  LCD_6 <- PC3|A03 |    I    | D06|PD6 -> BTN_R11
+ *  LCD_5 <- PC4|A04 |    N    | D05|PD5 -> BTN_R12
+ *  LCD_4 <- PC5|A05 |    O    | D04|PD4 -> BTN_R20
  *           PC6|A06 |         | D03|PD3 -> USB_D-
  *           PC7|A07 |         | D02|PD2 -> USB_D+
  *                5V |         | GND
@@ -38,6 +38,7 @@
 #include <util/delay.h>
 
 #include "usbdrv.h"
+#include "oddebug.h"
 #include "io.h"
 
 #define LCD_E_PORT PORTC
@@ -48,10 +49,10 @@
 #define LCD_5_PORT PORTC
 #define LCD_6_PORT PORTC
 #define LCD_7_PORT PORTC
-#define LCD_4 PC2
-#define LCD_5 PC3
-#define LCD_6 PC4
-#define LCD_7 PC5
+#define LCD_4 PC5
+#define LCD_5 PC4
+#define LCD_6 PC3
+#define LCD_7 PC2
 #include "lcd.h"
 
 #define NUM_KEYS 10
@@ -183,7 +184,7 @@ static uint pressedKey = 0;
 
 static const uchar keys[NUM_KEYS + 1][2] = {
     {0, 0}, // Reserved (no event)
-    {NO_MOD, KEY_1},
+    {MOD_SHIFT_LEFT, KEY_A},
     {NO_MOD, KEY_2},
     {NO_MOD, KEY_3},
     {NO_MOD, KEY_4},
@@ -239,8 +240,6 @@ static void init() {
     // BTN R1, R2 PULLUP
     PORTD = (1<<PD0) | (1<<PD1) | (1<<PD4) | (1<<PD5) | (1<<PD6) | (1<<PD7);
 
-    // Wait half a second for the microcontroller to reboot after reset
-    for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
 }
 
 static void nano_led() {
@@ -263,15 +262,19 @@ void config() { }
 
 int main(int argc, char *argv[]) {
     uint lastKey = 0;
-    uint newKeyPress = 0;
 
     // Turn on the watchdog timer with 2 seconds
     wdt_enable(WDTO_2S);
     init();
+    odDebugInit();
     usbInit(); // Reserved V-USB procedure
+    // Wait half a second for the microcontroller to reboot after reset
+    for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
     sei(); // Turn on interrupts
+    DBG1(0x00, 0, 0);
 
     for (int i = 0; i < 5; i++) {
+        wdt_reset();
         PORTB |= _BV(PB5);
         _delay_ms(100);
         PORTB &= ~(_BV(PB5));
@@ -294,11 +297,9 @@ int main(int argc, char *argv[]) {
 
         if (lastKey != pressedKey) {
             lastKey = pressedKey;
-            newKeyPress = 1;
         }
 
-        if (newKeyPress && usbInterruptIsReady()) {
-            newKeyPress = 0;
+        if (usbInterruptIsReady()) {
             updateReportBuffer(lastKey);
             usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
         }
