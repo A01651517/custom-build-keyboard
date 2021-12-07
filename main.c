@@ -26,24 +26,28 @@
  * Counter plus another animation.
  */
 
+#define F_CPU 16000000UL  // 16 MHz
+
 #include <stdio.h>
 #include <avr/io.h>
 #include <util/delay.h>
 #include "io.h"
 
+#define LCD_COMMS_DELAY 40
 #define LCD_E_PORT PORTC
 #define LCD_RS_PORT PORTC
-#define LCD_E PC1
-#define LCD_RS PC0
+#define LCD_E PD1
+#define LCD_RS PD0
 #define LCD_4_PORT PORTC
 #define LCD_5_PORT PORTC
 #define LCD_6_PORT PORTC
 #define LCD_7_PORT PORTC
-#define LCD_4 PC2
-#define LCD_5 PC3
-#define LCD_6 PC4
-#define LCD_7 PC5
+#define LCD_4 PD2
+#define LCD_5 PD3
+#define LCD_6 PD4
+#define LCD_7 PD5
 #include "lcd.h"
+#include "lcd_messages.h"
 
 #define BTN_CONFIG_PIN PINB
 #define BTN_CONFIG PB4
@@ -51,6 +55,9 @@
 #define USB_PORT PORTD
 #define USB_DP PD2 // USB D+
 #define USB_DM PD3 // USB D-
+
+#define NORMAL 0
+#define CONFIG 1
 
 // Buttons that are on PORTB
 #define BTNS_PINB_LEN 4
@@ -85,6 +92,17 @@ void nano_led() {
     _delay_ms(500);
 }
 
+unsigned int mode = NORMAL;
+unsigned int alphaIndex = 0;
+char  currentKey[10];
+char alpha[37]={'a','b','c','d','e',
+                'f','g','h','i','j',
+                'k','l','m','n','o',
+                'p','q','r','s','t',
+                'u','v','w','x','y','z',
+                '1','2','3','4','5','6','7','8','9','0'};
+char * nums[11]={"CERO","UNO","DOS","TRES","CUATRO","CINCO","SEIS","SIETE","OCHO","NUEVE"};
+
 int main(int argc, char *argv[]) {
     // LED OUTPUT
     DDRC = (1<<PC0) | (1<<PC1) | (1<<PC2) | (1<<PC3) | (1<<PC4) | (1<<PC5);
@@ -94,6 +112,12 @@ int main(int argc, char *argv[]) {
     // BTN R1, R2 PULLUP
     PORTD = (1<<PD0) | (1<<PD1) | (1<<PD4) | (1<<PD5) | (1<<PD6) | (1<<PD7);
 
+    //LCD setup
+    init_4bit_lcd(2);
+    set_display(1,0,0);
+    go_home();
+    clear_display();
+    introMessage();
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
         _delay_ms(100);
@@ -101,29 +125,62 @@ int main(int argc, char *argv[]) {
         _delay_ms(100);
     }
 
-    while(1) {
-        // Check Config Button
-        if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) {
-            // TODO: Enter config mode
+    while(1) {  
+        if(mode==NORMAL){
+            normalModeMessage();
+            // Check Config Button
+            if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) {
+                // TODO: Enter config mode
+            }
+
+            if (!poll(BTN_CONFIG_PIN, BTN_CONFIG)) { // If the button is pressed
+                _delay_us(20); // Bounce-back delay
+                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
+                _delay_us(20); // Bounce-back delay
+                configModeMessage();
+                mode=CONFIG;
+            }
+
+            // Check buttons PORTB 
+            for (int i = 0; i < BTNS_PINB_LEN; i++)
+                if (! ((PINB >> BTNS_PINB[i]) & 1) )
+                    // TODO: Call button input
+                    nano_led();
+
+            // Check buttons PORTC
+            for (int i = 0; i < BTNS_PINC_LEN; i++)
+                if (! ((PINC >> BTNS_PINC[i]) & 1) )
+                    // TODO: Call button input
+                    nano_led();
+
+            // Check buttons PORTD
+            for (int i = 0; i < BTNS_PIND_LEN; i++)
+                if (! ((PINC >> BTNS_PIND[i]) & 1) )
+                    // TODO: Call button input
+                    nano_led();
+        }else{
+            while(poll(BTN_CONFIG_PIN, BTN_CONFIG)){
+                if (!poll(PINB, PINB3)) { // If the button is pressed
+                    _delay_us(20); // Bounce-back delay
+                    while(!poll(PINB, PINB3)); // Wait for its release
+                    _delay_us(20); // Bounce-back delay
+                    updateCurrentConfig(nums[4],alphaIndex,alpha);
+                }
+                
+                if (!poll(PINB, PINB2)) { // If the button is pressed
+                    _delay_us(20); // Bounce-back delay
+                    while(!poll(PINB, PINB2)); // Wait for its release
+                    _delay_us(20); // Bounce-back delay
+                    //check bouds
+                    alphaIndex++;
+                    updateCurrentConfig(nums[4],alphaIndex,alpha);
+                }
+            }
+            while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
+            _delay_us(20); // Bounce-back delay
+            normalModeMessage();
+            mode=NORMAL;
         }
-
-        // Check buttons PORTB 
-        for (int i = 0; i < BTNS_PINB_LEN; i++)
-            if (! ((PINB >> BTNS_PINB[i]) & 1) )
-                // TODO: Call button input
-                nano_led();
-
-        // Check buttons PORTC
-        for (int i = 0; i < BTNS_PINC_LEN; i++)
-            if (! ((PINC >> BTNS_PINC[i]) & 1) )
-                // TODO: Call button input
-                nano_led();
-
-        // Check buttons PORTD
-        for (int i = 0; i < BTNS_PIND_LEN; i++)
-            if (! ((PINC >> BTNS_PIND[i]) & 1) )
-                // TODO: Call button input
-                nano_led();
     }
     return 0;
 }
