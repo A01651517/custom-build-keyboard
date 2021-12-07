@@ -101,7 +101,7 @@ char alpha[37]={'a','b','c','d','e',
                 'p','q','r','s','t',
                 'u','v','w','x','y','z',
                 '1','2','3','4','5','6','7','8','9','0'};
-char * nums[11]={"CERO","UNO","DOS","TRES","CUATRO","CINCO","SEIS","SIETE","OCHO","NUEVE"};
+char * nums[11]={"ZERO","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"};
 
 int main(int argc, char *argv[]) {
     // LED OUTPUT
