@@ -31,6 +31,8 @@
 #include <stdio.h>
 #include <avr/io.h>
 #include <util/delay.h>
+#include <avr/pgmspace.h>
+#include <avr/eeprom.h>
 #include "io.h"
 
 #define LCD_COMMS_DELAY 40
@@ -92,6 +94,10 @@ void nano_led() {
     _delay_ms(500);
 }
 
+void isFirstTime(){
+    
+}
+
 unsigned int mode = NORMAL;
 unsigned int alphaIndex = 0;
 char  currentKey[10];
@@ -100,10 +106,12 @@ char alpha[37]={'a','b','c','d','e',
                 'k','l','m','n','o',
                 'p','q','r','s','t',
                 'u','v','w','x','y','z',
-                '1','2','3','4','5','6','7','8','9','0'};
+                '0','1','2','3','4','5','6','7','8','9'};
 char * nums[11]={"ZERO","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"};
+const unsigned int currentConfig [] PROGMEM= {26,27,28,29,30,31,32,33,34,35};
 
 int main(int argc, char *argv[]) {
+    uint8_t index[1];
     // LED OUTPUT
     DDRC = (1<<PC0) | (1<<PC1) | (1<<PC2) | (1<<PC3) | (1<<PC4) | (1<<PC5);
 
@@ -111,12 +119,29 @@ int main(int argc, char *argv[]) {
     PORTB = (1<<PB0) | (1<<PB1) | (1<<PB2) | (1<<PB3) | (1<<PB4) | (1<<PB5);
     // BTN R1, R2 PULLUP
     PORTD = (1<<PD0) | (1<<PD1) | (1<<PD4) | (1<<PD5) | (1<<PD6) | (1<<PD7);
-
+    /*
+    *check first time use
+    */
+    uint8_t initFlag[1];
+    uint8_t keys[10]={'0','1','2','3','4','5','6','7','8','9'};
+    
     //LCD setup
     init_4bit_lcd(2);
     set_display(1,0,0);
     go_home();
     clear_display();
+    eeprom_read_block((void *) initFlag,(const void * )31,1);
+    write_char(initFlag[0]);
+    _delay_ms(4000);
+    if((int)initFlag[0]!=49){
+        //write intial key values
+        write_str("entro");
+        _delay_ms(4000);
+        eeprom_update_block((const void *) keys,(void * ) 2,11);
+        //update flag
+        initFlag[0]='1';
+        eeprom_update_block((const void *) initFlag,(void * ) 31,1);
+    }
     introMessage();
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
@@ -164,7 +189,24 @@ int main(int argc, char *argv[]) {
                     _delay_us(20); // Bounce-back delay
                     while(!poll(PINB, PINB3)); // Wait for its release
                     _delay_us(20); // Bounce-back delay
-                    updateCurrentConfig(nums[4],alphaIndex,alpha);
+                    eeprom_read_block((void *) index,(const void * )2,1);
+                    //write_char(index[0]);
+                    //_delay_ms(4000);
+                    if(index[0]>='a'&&index[0]<='z'){
+                        write_str("entro char");
+                        _delay_ms(4000);
+                        index[0]-=97;
+                    }else{
+                        write_str("entro num");
+                        _delay_ms(4000);
+                        index[0]-=48+26;
+                    }
+                    //alphaIndex=currentConfig[4];
+                    clear_display();
+                    go_home(); 
+                    write_char(alpha[index[0]]);
+                    _delay_ms(4000);
+                    //updateCurrentConfig(nums[4],(int)index[0],alpha);
                 }
                 
                 if (!poll(PINB, PINB2)) { // If the button is pressed
@@ -179,6 +221,9 @@ int main(int argc, char *argv[]) {
             while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
             _delay_us(20); // Bounce-back delay
             clear_display();
+            keys[0]='a';
+            //keys[0]=(unsigned char)alphaIndex;
+            eeprom_update_block((const void *) keys,(void * ) 2,11);
             normalModeMessage();
             mode=NORMAL;
         }
