@@ -131,18 +131,13 @@ int main(int argc, char *argv[]) {
     go_home();
     clear_display();
     eeprom_read_block((void *) initFlag,(const void * )31,1);
-    write_char(initFlag[0]);
-    _delay_ms(4000);
     if((int)initFlag[0]!=49){
-        //write intial key values
-        write_str("entro");
-        _delay_ms(4000);
         eeprom_update_block((const void *) keys,(void * ) 2,11);
-        //update flag
         initFlag[0]='1';
         eeprom_update_block((const void *) initFlag,(void * ) 31,1);
     }
     introMessage();
+    
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
         _delay_ms(100);
@@ -186,27 +181,21 @@ int main(int argc, char *argv[]) {
         }else{
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)){
                 if (!poll(PINB, PINB3)) { // If the button is pressed
+                    clear_display();
+                    go_home(); 
                     _delay_us(20); // Bounce-back delay
                     while(!poll(PINB, PINB3)); // Wait for its release
                     _delay_us(20); // Bounce-back delay
                     eeprom_read_block((void *) index,(const void * )2,1);
                     //write_char(index[0]);
                     //_delay_ms(4000);
-                    if(index[0]>='a'&&index[0]<='z'){
-                        write_str("entro char");
-                        _delay_ms(4000);
-                        index[0]-=97;
+                    if((int)index[0]>=97&&(int)index[0]<=122){
+                        index[0] -= 97;
                     }else{
-                        write_str("entro num");
-                        _delay_ms(4000);
-                        index[0]-=48+26;
+                        index[0] = (int)index[0]-(48)+26;
                     }
                     //alphaIndex=currentConfig[4];
-                    clear_display();
-                    go_home(); 
-                    write_char(alpha[index[0]]);
-                    _delay_ms(4000);
-                    //updateCurrentConfig(nums[4],(int)index[0],alpha);
+                    updateCurrentConfig(nums[4],(int)index[0],alpha);
                 }
                 
                 if (!poll(PINB, PINB2)) { // If the button is pressed
@@ -221,7 +210,7 @@ int main(int argc, char *argv[]) {
             while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
             _delay_us(20); // Bounce-back delay
             clear_display();
-            keys[0]='a';
+            keys[0]=alpha[alphaIndex];
             //keys[0]=(unsigned char)alphaIndex;
             eeprom_update_block((const void *) keys,(void * ) 2,11);
             normalModeMessage();
