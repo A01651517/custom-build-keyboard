@@ -290,8 +290,6 @@ int main() {
     odDebugInit();
     usbInit(); // Reserved V-USB procedure
 
-    // Wait half a second for the microcontroller to reboot after reset
-    for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
     sei(); // Turn on interrupts
     DBG1(0x00, 0, 0);
 
@@ -299,12 +297,6 @@ int main() {
     while(1) {  
         wdt_reset(); // Reset Watchdog timer to avoid reset
         usbPoll(); // Listen to host
-
-        if (usbInterruptIsReady()) {
-            updateReportBuffer(pressedKey);
-            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-        }
-        pressedKey = 0;
 
         if(mode==NORMAL) {
             if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
@@ -362,5 +354,11 @@ int main() {
             normalModeMessage();
             mode = NORMAL;
         }
+
+        if (usbInterruptIsReady()) {
+            updateReportBuffer(pressedKey);
+            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+        }
+        pressedKey = 0;
     }
 }
