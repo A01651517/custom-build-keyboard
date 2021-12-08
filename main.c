@@ -133,7 +133,7 @@ int poll_btns() {
 
 /* Function to change value in eeprom for a certain key */
 void eeprom_key_value(int pressedKey) {
-    eeprom_read_block((void *) eepromAux,(const void * )2,1);
+    eeprom_read_block((void *) eepromAux,(const void * )2+pressedKey,1);
     //write_char(eepromAux[0]);
     //_delay_ms(4000);
     if ((int)eepromAux[0]>=97 && (int)eepromAux[0]<=122){
@@ -167,10 +167,14 @@ static void init() {
     eeprom_read_block((void *) initFlag,(const void * )31,1);
 
     // Check if it is first time
-    if((int)initFlag[0]!=49) {
+    if((int)initFlag[0]==49) {
         eeprom_update_block((const void *) kkeys,(void * ) 2,11);
         initFlag[0]='1';
         eeprom_update_block((const void *) initFlag,(void * ) 31,1);
+        write_str("      ok     ");
+        _delay_ms(1000);
+        go_home();
+        clear_display();
     }
 
     // Display intro message on LCD
