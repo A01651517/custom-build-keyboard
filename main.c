@@ -179,12 +179,17 @@ static const char alpha[36] = {
  * It assumes that the grid is connected in order.
  * @returns de number of the first button that is pressed [0-9]. If there is
  * not a button pressed it returns -1; */
-int poll_btns() {
+int poll_btns(int mode) {
     int btnID = 1;
 
     // Check buttons
     for (int i = 0; i < NUM_KEYS; i++) {
         if (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) {
+            if (mode != NORMAL) {
+                _delay_ms(2);
+                while (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) );
+                _delay_ms(2);
+            }
             return btnID;
         }
         btnID++;
@@ -273,25 +278,26 @@ int main() {
 
     normalModeMessage();
     while(1) {  
-        usbPoll(); // Listen to host
-
         if(mode == NORMAL) {
             if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
                 while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
                 configModeMessage();
                 mode = CONFIG;
             }
+            usbPoll(); // Listen to host
 
-            // TODO: change for pressedKey?
-            pressedKey = (uint) poll_btns();
-            // TODO: send signal to host of the pressed key
-
+            pressedKey = (uint) poll_btns(mode);
+            if (usbInterruptIsReady()) {
+                updateReportBuffer(pressedKey);
+                usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+            }
+            pressedKey = 0;
         } else {
             flag = 0;
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)) {
                 if (!flag) {
                     // Wait until user has pressed a key
-                    while( (btnPress = poll_btns()) == -1);
+                    while( (btnPress = poll_btns(mode)) == 0);
 
                     // Read value from eeprom -> stored in eepromAux[0]
                     eeprom_key_value(btnPress);
@@ -303,7 +309,7 @@ int main() {
                 }
 
                 // Go right or go left
-                dirPress = poll_btns();
+                dirPress = poll_btns(mode);
 
                 if (dirPress == 4) { // Button 4
                     alphaIndex = alphaIndex-1;
@@ -330,11 +336,5 @@ int main() {
             normalModeMessage();
             mode = NORMAL;
         }
-
-        if (usbInterruptIsReady()) {
-            updateReportBuffer(pressedKey);
-            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-        }
-        pressedKey = 0;
     }
 }
