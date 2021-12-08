@@ -36,9 +36,10 @@
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
+#include <avr/eeprom.h>
 #include <util/delay.h>
-
-#include "io.h"
+#include <io.h>
 #include <usb.h>
 
 #define LCD_COMMS_DELAY 40
@@ -86,6 +87,20 @@ const struct btnInfo BTNS[BTNS_LEN] = {
     { .pin = &PIND, .btn = PD0 }, // Button 9
 };
 
+/* Initial configuration for EEPROM */
+uint8_t initFlag[1];
+uint8_t eepromAux[1];
+uint8_t kkeys[10]={'0','1','2','3','4','5','6','7','8','9'};
+#define AVAILABLE_CHARS 36
+static const char alpha[36] = {
+    'a','b','c','d','e',
+    'f','g','h','i','j',
+    'k','l','m','n','o',
+    'p','q','r','s','t',
+    'u','v','w','x','y','z',
+    '1','2','3','4','5','6','7','8','9','0'
+};
+    
 /* Function to turn on nano's integrated led */
 void nano_led() {
     PORTB |= _BV(PB5);
@@ -115,6 +130,21 @@ int poll_btns() {
     return -1;
 }
 
+/* Function to change value in eeprom for a certain key */
+void eeprom_key_value(int pressedKey) {
+    eeprom_read_block((void *) eepromAux,(const void * )2,1);
+    //write_char(eepromAux[0]);
+    //_delay_ms(4000);
+    if ((int)eepromAux[0]>=97 && (int)eepromAux[0]<=122){
+        eepromAux[0] -= 97;
+    } else {
+        eepromAux[0] = (int)eepromAux[0]-(48)+26;
+    }
+    //alphaIndex=currentConfig[4];
+}
+
+/* Function to init the PORTS for the buttons and LED,
+ * and also init the LED screen */
 static void init() {
     // BTN CONFIG, 0, R0 OUTPUT
     DDRB = (1<<PB0) | (1<<PB1) | (1<<PB2) | (1<<PB3) | (1<<PB4);
@@ -131,10 +161,21 @@ static void init() {
     set_display(1,0,0);
     go_home();
     clear_display();
+
+    // Read EEPROM
+    eeprom_read_block((void *) initFlag,(const void * )31,1);
+
+    // Check if it is first time
+    if((int)initFlag[0]!=49) {
+        eeprom_update_block((const void *) kkeys,(void * ) 2,11);
+        initFlag[0]='1';
+        eeprom_update_block((const void *) initFlag,(void * ) 31,1);
+    }
+
+    // Display intro message on LCD
     introMessage();
 
-    normalModeMessage();
-
+    // Flash led to tell finish init
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
         _delay_ms(50);
@@ -146,67 +187,91 @@ static void init() {
 int main(int argc, char *argv[]) {
     unsigned int mode = NORMAL;
     unsigned int alphaIndex = 0;
-    char  currentKey[10];
-    char alpha[37]={'a','b','c','d','e',
-                    'f','g','h','i','j',
-                    'k','l','m','n','o',
-                    'p','q','r','s','t',
-                    'u','v','w','x','y','z',
-                    '1','2','3','4','5','6','7','8','9','0'};
+    char currentKey[10];
+    // TODO: const
     char * nums[11]={"ZERO","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"};
 
+    int btnPress, dirPress;
+    // TODO: refactor this
+    int flag;
+
     // Turn on the watchdog timer with 2 seconds
-    wdt_enable(WDTO_2S);
+//    wdt_enable(WDTO_2S);
+
+    // Init Btns and LED screen
     init();
-    odDebugInit();
-    usbInit(); // Reserved V-USB procedure
+
+//    odDebugInit();
+//    usbInit(); // Reserved V-USB procedure
 
     // Wait half a second for the microcontroller to reboot after reset
     //for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
-    sei(); // Turn on interrupts
-    DBG1(0x00, 0, 0);
+//    sei(); // Turn on interrupts
+//    DBG1(0x00, 0, 0);
 
+    normalModeMessage();
     while(1) {  
-        wdt_reset(); // Reset Watchdog timer to avoid reset
-        usbPoll(); // Listen to host
+//        wdt_reset(); // Reset Watchdog timer to avoid reset
+//        usbPoll(); // Listen to host
 
-        if (usbInterruptIsReady()) {
-            updateReportBuffer(pressedKey);
-            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-        }
-        pressedKey = 0;
+//        if (usbInterruptIsReady()) {
+//            updateReportBuffer(pressedKey);
+//            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+//        }
+//        pressedKey = 0;
 
-        if(mode==NORMAL){
+        if(mode==NORMAL) {
             if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
                 while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
                 configModeMessage();
-                mode=CONFIG;
+                mode = CONFIG;
             }
 
-            poll_btns();
-        }else{
-            while(poll(BTN_CONFIG_PIN, BTN_CONFIG)){
-                if (!poll(PINB, PINB3)) { // If the button is pressed
-                    _delay_us(20); // Bounce-back delay
-                    while(!poll(PINB, PINB3)); // Wait for its release
-                    _delay_us(20); // Bounce-back delay
-                    updateCurrentConfig(nums[4],alphaIndex,alpha);
+            // TODO: change for pressedKey?
+            btnPress = poll_btns();
+            // TODO: send signal to host of the pressed key
+
+        } else {
+            flag = 0;
+            while(poll(BTN_CONFIG_PIN, BTN_CONFIG)) {
+                if (!flag) {
+                    // Wait until user has pressed a key
+                    while( (btnPress = poll_btns()) == -1);
+
+                    // Read value from eeprom -> stored in eepromAux[0]
+                    eeprom_key_value(btnPress);
+
+                    // Display current value in screen
+                    updateCurrentConfig(nums[btnPress], (int)eepromAux[0], alpha);
+
+                    flag = 1;
                 }
-                
-                if (!poll(PINB, PINB2)) { // If the button is pressed
-                    _delay_us(20); // Bounce-back delay
-                    while(!poll(PINB, PINB2)); // Wait for its release
-                    _delay_us(20); // Bounce-back delay
-                    //check bouds
-                    alphaIndex++;
-                    updateCurrentConfig(nums[4],alphaIndex,alpha);
+
+                // Go right or go left
+                dirPress = poll_btns();
+                if (dirPress == 4) { // Button 4
+                    alphaIndex--;
+                    if (alphaIndex < 0) alphaIndex = AVAILABLE_CHARS-1;
+                    // Update led display
+                    updateCurrentConfig(nums[btnPress],alphaIndex,alpha);
+                } else if (dirPress == 6) { // Button 6
+                    alphaIndex = (alphaIndex+1)%AVAILABLE_CHARS;
+                    // Update led display
+                    updateCurrentConfig(nums[btnPress],alphaIndex,alpha);
                 }
             }
             while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
             _delay_us(20); // Bounce-back delay
+
+            // Write on eeprom
+            kkeys[0] = alpha[alphaIndex];
+            //kkeys[0]=(unsigned char)alphaIndex;
+            eeprom_update_block((const void *) kkeys,(void * ) 2,11);
+
+            // Return to normal mode
             clear_display();
             normalModeMessage();
-            mode=NORMAL;
+            mode = NORMAL;
         }
     }
     return 0;
