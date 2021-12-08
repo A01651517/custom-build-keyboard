@@ -51,10 +51,10 @@
 #define LCD_5_PORT PORTC
 #define LCD_6_PORT PORTC
 #define LCD_7_PORT PORTC
-#define LCD_4 PC5
-#define LCD_5 PC4
-#define LCD_6 PC3
-#define LCD_7 PC2
+#define LCD_4 PC2
+#define LCD_5 PC3
+#define LCD_6 PC4
+#define LCD_7 PC5
 #include "lcd.h"
 #include "lcd_messages.h"
 
@@ -98,7 +98,7 @@ static const char alpha[36] = {
     'k','l','m','n','o',
     'p','q','r','s','t',
     'u','v','w','x','y','z',
-    '1','2','3','4','5','6','7','8','9','0'
+    '0','1','2','3','4','5','6','7','8','9'
 };
     
 /* Function to turn on nano's integrated led */
@@ -121,7 +121,8 @@ int poll_btns() {
         if (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) {
             _delay_us(20);
             while (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) );
-            nano_led();
+            //nano_led();
+            _delay_us(10);
             return btnID;
         }
         btnID++;
@@ -240,7 +241,7 @@ int main(int argc, char *argv[]) {
 
                     // Read value from eeprom -> stored in eepromAux[0]
                     eeprom_key_value(btnPress);
-
+                    alphaIndex=(int)eepromAux[0];
                     // Display current value in screen
                     updateCurrentConfig(nums[btnPress], (int)eepromAux[0], alpha);
 
@@ -249,9 +250,10 @@ int main(int argc, char *argv[]) {
 
                 // Go right or go left
                 dirPress = poll_btns();
+
                 if (dirPress == 4) { // Button 4
-                    alphaIndex--;
-                    if (alphaIndex < 0) alphaIndex = AVAILABLE_CHARS-1;
+                    alphaIndex = alphaIndex-1;
+                    if (alphaIndex < 0) alphaIndex = 26;
                     // Update led display
                     updateCurrentConfig(nums[btnPress],alphaIndex,alpha);
                 } else if (dirPress == 6) { // Button 6
@@ -270,6 +272,7 @@ int main(int argc, char *argv[]) {
 
             // Return to normal mode
             clear_display();
+            go_home();
             normalModeMessage();
             mode = NORMAL;
         }
