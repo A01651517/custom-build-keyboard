@@ -4,36 +4,6 @@
 #include "usbdrv.h"
 #include "oddebug.h"
 
-/* We use a simplifed keyboard report descriptor which does not support the
- * boot protocol. We don't allow setting status LEDs and we only allow one
- * simultaneous key press (except modifiers). We can therefore use short
- * 2 byte input reports.
- * The report descriptor has been created with usb.org's "HID Descriptor Tool"
- * which can be downloaded from http://www.usb.org/developers/hidpage/.
- * Redundant entries (such as LOGICAL_MINIMUM and USAGE_PAGE) have been omitted
- * for the second INPUT item.
- */
-const PROGMEM char usbHidReportDescriptor[35] = {   /* USB report descriptor */
-    0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
-    0x09, 0x06,                    // USAGE (Keyboard)
-    0xa1, 0x01,                    // COLLECTION (Application)
-    0x05, 0x07,                    //   USAGE_PAGE (Keyboard)
-    0x19, 0xe0,                    //   USAGE_MINIMUM (Keyboard LeftControl)
-    0x29, 0xe7,                    //   USAGE_MAXIMUM (Keyboard Right GUI)
-    0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
-    0x25, 0x01,                    //   LOGICAL_MAXIMUM (1)
-    0x75, 0x01,                    //   REPORT_SIZE (1)
-    0x95, 0x08,                    //   REPORT_COUNT (8)
-    0x81, 0x02,                    //   INPUT (Data,Var,Abs)
-    0x95, 0x01,                    //   REPORT_COUNT (1)
-    0x75, 0x08,                    //   REPORT_SIZE (8)
-    0x25, 0x65,                    //   LOGICAL_MAXIMUM (101)
-    0x19, 0x00,                    //   USAGE_MINIMUM (Reserved (no event indicated))
-    0x29, 0x65,                    //   USAGE_MAXIMUM (Keyboard Application)
-    0x81, 0x00,                    //   INPUT (Data,Array,Abs)
-    0xc0                           // END_COLLECTION
-};
-
 /**
  * Official HID key values for keyboard
  * devices
@@ -94,56 +64,5 @@ const PROGMEM char usbHidReportDescriptor[35] = {   /* USB report descriptor */
 #define MOD_ALT_RIGHT       (1<<6)
 #define MOD_GUI_RIGHT       (1<<7)
 
-static uchar reportBuffer[2]; /* HID Buffer */
-static uchar idleRate; /* HID Idle Rate */
-static uint pressedKey = 0;
-
 #define NUM_KEYS 10
-static const uchar keys[NUM_KEYS + 1][2] = {
-    {0, 0}, // Reserved (no event)
-    {NO_MOD, (uchar) KEY_1},
-    {NO_MOD, (uchar) KEY_2},
-    {NO_MOD, (uchar) KEY_3},
-    {NO_MOD, (uchar) KEY_4},
-    {NO_MOD, (uchar) KEY_5},
-    {NO_MOD, (uchar) KEY_6},
-    {NO_MOD, (uchar) KEY_7},
-    {NO_MOD, (uchar) KEY_8},
-    {NO_MOD, (uchar) KEY_9},
-    {NO_MOD, (uchar) KEY_0}
-};
-
-static void updateReportBuffer(uint key) {
-    reportBuffer[0] = keys[key][0];
-    reportBuffer[1] = keys[key][1];
-}
-
-/* Reserved function ran by the V-USB driver for the Control endpoint */
-uchar usbFunctionSetup(uchar data[8]) {
-    // We cast the data request
-    usbRequest_t *request = (void *)data;
-    // We make sure that the request is an HID class request
-    if ((request->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS) {
-        switch (request->bRequest) {
-            // We send the last pressed key
-            case USBRQ_HID_GET_REPORT:
-                // We update the report buffer
-                updateReportBuffer(pressedKey);
-                // We set the reserved V-USB pointer to the report buffer
-                usbMsgPtr = reportBuffer;
-                return sizeof(reportBuffer);
-            // We share our idle rate with the host
-            case USBRQ_HID_GET_IDLE:
-                // Send the delay to the computer
-                usbMsgPtr = &idleRate;
-                return 1;
-            // We get the idle rate from the host
-            case USBRQ_HID_SET_IDLE:
-                 // Get the default delay from the computer
-                idleRate = request->wValue.bytes[1];
-                break;
-        }
-    }
-    return 0;
-}
 #endif

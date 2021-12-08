@@ -2,7 +2,7 @@
  * Counter
  * Peter González A01651517
  * Juan Alcantara A01703947
- *
+ * Royer Arenas A01209400
  * Diagram:
  *                   -----------
  *           PB5|D13 |   [ ]   | D12|PB4 -> BTN_CONFIG
@@ -61,10 +61,6 @@
 #define BTN_CONFIG_PIN PINB
 #define BTN_CONFIG PB4
 
-#define USB_PORT PORTD
-#define USB_DP PD2 // USB D+
-#define USB_DM PD3 // USB D-
-
 #define NORMAL 0
 #define CONFIG 1
 
@@ -86,6 +82,84 @@ const struct btnInfo BTNS[BTNS_LEN] = {
     { .pin = &PIND, .btn = PD1 }, // Button 8
     { .pin = &PIND, .btn = PD0 }, // Button 9
 };
+/* We use a simplifed keyboard report descriptor which does not support the
+ * boot protocol. We don't allow setting status LEDs and we only allow one
+ * simultaneous key press (except modifiers). We can therefore use short
+ * 2 byte input reports.
+ * The report descriptor has been created with usb.org's "HID Descriptor Tool"
+ * which can be downloaded from http://www.usb.org/developers/hidpage/.
+ * Redundant entries (such as LOGICAL_MINIMUM and USAGE_PAGE) have been omitted
+ * for the second INPUT item.
+ */
+const PROGMEM char usbHidReportDescriptor[35] = {   /* USB report descriptor */
+    0x05, 0x01,                    // USAGE_PAGE (Generic Desktop)
+    0x09, 0x06,                    // USAGE (Keyboard)
+    0xa1, 0x01,                    // COLLECTION (Application)
+    0x05, 0x07,                    //   USAGE_PAGE (Keyboard)
+    0x19, 0xe0,                    //   USAGE_MINIMUM (Keyboard LeftControl)
+    0x29, 0xe7,                    //   USAGE_MAXIMUM (Keyboard Right GUI)
+    0x15, 0x00,                    //   LOGICAL_MINIMUM (0)
+    0x25, 0x01,                    //   LOGICAL_MAXIMUM (1)
+    0x75, 0x01,                    //   REPORT_SIZE (1)
+    0x95, 0x08,                    //   REPORT_COUNT (8)
+    0x81, 0x02,                    //   INPUT (Data,Var,Abs)
+    0x95, 0x01,                    //   REPORT_COUNT (1)
+    0x75, 0x08,                    //   REPORT_SIZE (8)
+    0x25, 0x65,                    //   LOGICAL_MAXIMUM (101)
+    0x19, 0x00,                    //   USAGE_MINIMUM (Reserved (no event indicated))
+    0x29, 0x65,                    //   USAGE_MAXIMUM (Keyboard Application)
+    0x81, 0x00,                    //   INPUT (Data,Array,Abs)
+    0xc0                           // END_COLLECTION
+};
+
+static uchar reportBuffer[2]; /* HID Buffer */
+static uchar idleRate; /* HID Idle Rate */
+static uint pressedKey = 0;
+static const uchar keys[NUM_KEYS + 1][2] = {
+    {0, 0}, // Reserved (no event)
+    {NO_MOD, KEY_1},
+    {NO_MOD, KEY_2},
+    {NO_MOD, KEY_3},
+    {NO_MOD, KEY_4},
+    {NO_MOD, KEY_5},
+    {NO_MOD, KEY_6},
+    {NO_MOD, KEY_7},
+    {NO_MOD, KEY_8},
+    {NO_MOD, KEY_9},
+    {NO_MOD, KEY_0}
+};
+static void updateReportBuffer(uint key) {
+    reportBuffer[0] = keys[key][0];
+    reportBuffer[1] = keys[key][1];
+}
+/* Reserved function ran by the V-USB driver for the Control endpoint */
+uchar usbFunctionSetup(uchar data[8]) {
+    // We cast the data request
+    usbRequest_t *request = (void *)data;
+    // We make sure that the request is an HID class request
+    if ((request->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS) {
+        switch (request->bRequest) {
+            // We send the last pressed key
+            case USBRQ_HID_GET_REPORT:
+                // We update the report buffer
+                updateReportBuffer(pressedKey);
+                // We set the reserved V-USB pointer to the report buffer
+                usbMsgPtr = reportBuffer;
+                return sizeof(reportBuffer);
+            // We share our idle rate with the host
+            case USBRQ_HID_GET_IDLE:
+                // Send the delay to the computer
+                usbMsgPtr = &idleRate;
+                return 1;
+            // We get the idle rate from the host
+            case USBRQ_HID_SET_IDLE:
+                 // Get the default delay from the computer
+                idleRate = request->wValue.bytes[1];
+                break;
+        }
+    }
+    return 0;
+}
 
 /* Initial configuration for EEPROM */
 uint8_t initFlag[1];
@@ -118,9 +192,10 @@ int poll_btns() {
 
     // Check buttons
     for (int i = 0; i < BTNS_LEN; i++) {
+        wdt_reset();
         if (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) {
             _delay_us(20);
-            while (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) );
+            while (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) wdt_reset();
             //nano_led();
             _delay_us(10);
             return btnID;
@@ -172,6 +247,7 @@ static void init() {
         initFlag[0]='1';
         eeprom_update_block((const void *) initFlag,(void * ) 31,1);
         write_str("      ok     ");
+        wdt_reset();
         _delay_ms(1000);
         go_home();
         clear_display();
@@ -180,6 +256,8 @@ static void init() {
     // Display intro message on LCD
     introMessage();
 
+    wdt_reset();
+    /*
     // Flash led to tell finish init
     for (int i = 0; i < 5; i++) {
         PORTB |= _BV(PB5);
@@ -187,9 +265,10 @@ static void init() {
         PORTB &= ~(_BV(PB5));
         _delay_ms(50);
     }
+    */
 }
 
-int main(int argc, char *argv[]) {
+void main() {
     unsigned int mode = NORMAL;
     unsigned int alphaIndex = 0;
     char currentKey[10];
@@ -200,34 +279,35 @@ int main(int argc, char *argv[]) {
     // TODO: refactor this
     int flag;
 
-    // Turn on the watchdog timer with 2 seconds
-//    wdt_enable(WDTO_2S);
 
     // Init Btns and LED screen
     init();
 
-//    odDebugInit();
-//    usbInit(); // Reserved V-USB procedure
+    // Turn on the watchdog timer with 2 seconds
+    wdt_enable(WDTO_2S);
+
+    odDebugInit();
+    usbInit(); // Reserved V-USB procedure
 
     // Wait half a second for the microcontroller to reboot after reset
-    //for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
-//    sei(); // Turn on interrupts
-//    DBG1(0x00, 0, 0);
+    for (uint i = 0; i < 250; i++) {wdt_reset(); _delay_ms(2);}
+    sei(); // Turn on interrupts
+    DBG1(0x00, 0, 0);
 
     normalModeMessage();
     while(1) {  
-//        wdt_reset(); // Reset Watchdog timer to avoid reset
-//        usbPoll(); // Listen to host
+        wdt_reset(); // Reset Watchdog timer to avoid reset
+        usbPoll(); // Listen to host
 
-//        if (usbInterruptIsReady()) {
-//            updateReportBuffer(pressedKey);
-//            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
-//        }
-//        pressedKey = 0;
+        if (usbInterruptIsReady()) {
+            updateReportBuffer(pressedKey);
+            usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+        }
+        pressedKey = 0;
 
         if(mode==NORMAL) {
             if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
-                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
+                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)) wdt_reset(); // Wait for its release
                 configModeMessage();
                 mode = CONFIG;
             }
@@ -239,9 +319,10 @@ int main(int argc, char *argv[]) {
         } else {
             flag = 0;
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)) {
+                wdt_reset();
                 if (!flag) {
                     // Wait until user has pressed a key
-                    while( (btnPress = poll_btns()) == -1);
+                    while( (btnPress = poll_btns()) == -1) wdt_reset();
 
                     // Read value from eeprom -> stored in eepromAux[0]
                     eeprom_key_value(btnPress);
@@ -266,7 +347,7 @@ int main(int argc, char *argv[]) {
                     updateCurrentConfig(nums[btnPress],alphaIndex,alpha);
                 }
             }
-            while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
+            while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)) wdt_reset(); // Wait for its release
             _delay_us(20); // Bounce-back delay
 
             // Write on eeprom
