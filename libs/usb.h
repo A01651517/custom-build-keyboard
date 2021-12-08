@@ -1,8 +1,6 @@
 #ifndef USB
 #define USB
 
-#include "usbdrv.h"
-#include "oddebug.h"
 
 /**
  * Official HID key values for keyboard

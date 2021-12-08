@@ -40,6 +40,8 @@
 #include <avr/eeprom.h>
 #include <util/delay.h>
 #include <io.h>
+#include "usbdrv.h"
+#include "oddebug.h"
 #include <usb.h>
 
 #define LCD_COMMS_DELAY 40
@@ -144,12 +146,12 @@ uchar usbFunctionSetup(uchar data[8]) {
                 // We update the report buffer
                 updateReportBuffer(pressedKey);
                 // We set the reserved V-USB pointer to the report buffer
-                usbMsgPtr = reportBuffer;
+                usbMsgPtr = (short uint) reportBuffer;
                 return sizeof(reportBuffer);
             // We share our idle rate with the host
             case USBRQ_HID_GET_IDLE:
                 // Send the delay to the computer
-                usbMsgPtr = &idleRate;
+                usbMsgPtr = (short uint) &idleRate;
                 return 1;
             // We get the idle rate from the host
             case USBRQ_HID_SET_IDLE:
@@ -246,7 +248,7 @@ static void init() {
         eeprom_update_block((const void *) kkeys,(void * ) 2,11);
         initFlag[0]='1';
         eeprom_update_block((const void *) initFlag,(void * ) 31,1);
-        write_str("      ok     ");
+        write_str((unsigned char *)"      ok     ");
         wdt_reset();
         _delay_ms(1000);
         go_home();
@@ -268,10 +270,9 @@ static void init() {
     */
 }
 
-void main() {
+int main() {
     unsigned int mode = NORMAL;
     unsigned int alphaIndex = 0;
-    char currentKey[10];
     // TODO: const
     char * nums[11]={"ZERO","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"};
 
@@ -362,5 +363,4 @@ void main() {
             mode = NORMAL;
         }
     }
-    return 0;
 }
