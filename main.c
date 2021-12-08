@@ -115,7 +115,7 @@ const PROGMEM char usbHidReportDescriptor[35] = {   /* USB report descriptor */
 static uchar reportBuffer[2]; /* HID Buffer */
 static uchar idleRate; /* HID Idle Rate */
 static uint pressedKey = 0;
-static const uchar keys[NUM_KEYS + 1][2] = {
+static uchar keys[NUM_KEYS + 1][2] = {
     {0, 0}, // Reserved (no event)
     {NO_MOD, KEY_1},
     {NO_MOD, KEY_2},
@@ -279,19 +279,20 @@ int main() {
     normalModeMessage();
     while(1) {  
         if(mode == NORMAL) {
-            if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
-                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
-                configModeMessage();
+            if (!poll(BTN_CONFIG_PIN, BTN_CONFIG)) { // If the button is pressed
+                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release 
                 mode = CONFIG;
-            }
-            usbPoll(); // Listen to host
+                configModeMessage();
+            } else {
+                usbPoll(); // Listen to host
 
-            pressedKey = (uint) poll_btns(mode);
-            if (usbInterruptIsReady()) {
-                updateReportBuffer(pressedKey);
-                usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+                pressedKey = (uint) poll_btns(mode);
+                if (usbInterruptIsReady()) {
+                    updateReportBuffer(pressedKey);
+                    usbSetInterrupt(reportBuffer, sizeof(reportBuffer));
+                }
+                pressedKey = 0;
             }
-            pressedKey = 0;
         } else {
             flag = 0;
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)) {
@@ -326,9 +327,17 @@ int main() {
             _delay_us(20); // Bounce-back delay
 
             // Write on eeprom
-            kkeys[0] = alpha[alphaIndex];
+            kkeys[btnPress] = alpha[alphaIndex];
             //kkeys[0]=(unsigned char)alphaIndex;
             eeprom_update_block((const void *) kkeys,(void * ) 2,11);
+
+            for (int i = 1; i < NUM_KEYS; i++) {
+                if ((int) kkeys[(i % NUM_KEYS)] > 58) {
+                    keys[i][1] = (int) kkeys[i] - 93;
+                } else {
+                    keys[i][1] = (int) kkeys[i] - 19;
+                }
+            }
 
             // Return to normal mode
             clear_display();
