@@ -10,10 +10,10 @@
  *                   |    A    | D10|PB2 -> BTN_R00
  * LCD_RS <- PC0|A00 |    R    | D09|PB1 -> BTN_R01
  *  LCD_E <- PC1|A01 |    D    | D08|PB0 -> BTN_R02
- *  LCD_7 <- PC2|A02 |    U    | D07|PD7 -> BTN_R10
- *  LCD_6 <- PC3|A03 |    I    | D06|PD6 -> BTN_R11
- *  LCD_5 <- PC4|A04 |    N    | D05|PD5 -> BTN_R12
- *  LCD_4 <- PC5|A05 |    O    | D04|PD4 -> BTN_R20
+ *  LCD_4 <- PC2|A02 |    U    | D07|PD7 -> BTN_R10
+ *  LCD_5 <- PC3|A03 |    I    | D06|PD6 -> BTN_R11
+ *  LCD_6 <- PC4|A04 |    N    | D05|PD5 -> BTN_R12
+ *  LCD_7 <- PC5|A05 |    O    | D04|PD4 -> BTN_R20
  *           PC6|A06 |         | D03|PD3 -> USB_D-
  *           PC7|A07 |         | D02|PD2 -> USB_D+
  *                5V |         | GND
@@ -34,7 +34,6 @@
 
 #include <stdio.h>
 #include <avr/pgmspace.h>
-#include <avr/wdt.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <avr/eeprom.h>
@@ -71,9 +70,7 @@ struct btnInfo {
     unsigned char btn;
 };
 
-#define BTNS_LEN 10
-const struct btnInfo BTNS[BTNS_LEN] = {
-    { .pin = &PINB, .btn = PB3 }, // Button 0
+const struct btnInfo BTNS[NUM_KEYS] = {
     { .pin = &PINB, .btn = PB2 }, // Button 1
     { .pin = &PINB, .btn = PB1 }, // Button 2
     { .pin = &PINB, .btn = PB0 }, // Button 3
@@ -83,6 +80,7 @@ const struct btnInfo BTNS[BTNS_LEN] = {
     { .pin = &PIND, .btn = PD4 }, // Button 7
     { .pin = &PIND, .btn = PD1 }, // Button 8
     { .pin = &PIND, .btn = PD0 }, // Button 9
+    { .pin = &PINB, .btn = PB3 } // Button 0
 };
 /* We use a simplifed keyboard report descriptor which does not support the
  * boot protocol. We don't allow setting status LEDs and we only allow one
@@ -177,35 +175,21 @@ static const char alpha[36] = {
     '0','1','2','3','4','5','6','7','8','9'
 };
     
-/* Function to turn on nano's integrated led */
-void nano_led() {
-    PORTB |= _BV(PB5);
-    _delay_ms(500);
-    PORTB &= ~(_BV(PB5));
-    _delay_ms(500);
-}
-
 /* Function to search for the first button that is pressed.
  * It assumes that the grid is connected in order.
  * @returns de number of the first button that is pressed [0-9]. If there is
  * not a button pressed it returns -1; */
 int poll_btns() {
-    int btnID = 0;
+    int btnID = 1;
 
     // Check buttons
-    for (int i = 0; i < BTNS_LEN; i++) {
-        wdt_reset();
+    for (int i = 0; i < NUM_KEYS; i++) {
         if (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) {
-            _delay_us(20);
-            while (! ((*(BTNS[i].pin) >> BTNS[i].btn) & 1) ) wdt_reset();
-            //nano_led();
-            _delay_us(10);
             return btnID;
         }
         btnID++;
     }
-
-    return -1;
+    return 0;
 }
 
 /* Function to change value in eeprom for a certain key */
@@ -233,41 +217,6 @@ static void init() {
     PORTB = (1<<PB0) | (1<<PB1) | (1<<PB2) | (1<<PB3) | (1<<PB4) | (1<<PB5);
     // BTN R1, R2 PULLUP
     PORTD = (1<<PD0) | (1<<PD1) | (1<<PD4) | (1<<PD5) | (1<<PD6) | (1<<PD7);
-
-    //LCD setup
-    init_4bit_lcd(2);
-    set_display(1,0,0);
-    go_home();
-    clear_display();
-
-    // Read EEPROM
-    eeprom_read_block((void *) initFlag,(const void * )31,1);
-
-    // Check if it is first time
-    if((int)initFlag[0]==49) {
-        eeprom_update_block((const void *) kkeys,(void * ) 2,11);
-        initFlag[0]='1';
-        eeprom_update_block((const void *) initFlag,(void * ) 31,1);
-        write_str((unsigned char *)"      ok     ");
-        wdt_reset();
-        _delay_ms(1000);
-        go_home();
-        clear_display();
-    }
-
-    // Display intro message on LCD
-    introMessage();
-
-    wdt_reset();
-    /*
-    // Flash led to tell finish init
-    for (int i = 0; i < 5; i++) {
-        PORTB |= _BV(PB5);
-        _delay_ms(50);
-        PORTB &= ~(_BV(PB5));
-        _delay_ms(50);
-    }
-    */
 }
 
 int main() {
@@ -284,38 +233,65 @@ int main() {
     // Init Btns and LED screen
     init();
 
-    // Turn on the watchdog timer with 2 seconds
-    wdt_enable(WDTO_2S);
-
     odDebugInit();
     usbInit(); // Reserved V-USB procedure
 
     sei(); // Turn on interrupts
     DBG1(0x00, 0, 0);
 
+    init_4bit_lcd(2);
+    set_display(1,0,0);
+    go_home();
+    clear_display();
+
+    // Read EEPROM
+    eeprom_read_block((void *) initFlag,(const void * )31,1);
+
+    // Check if it is first time
+    if((int)initFlag[0]==49) {
+        eeprom_update_block((const void *) kkeys,(void * ) 2,11);
+        initFlag[0]='1';
+        eeprom_update_block((const void *) initFlag,(void * ) 31,1);
+        write_str((unsigned char *)"      ok     ");
+        _delay_ms(1000);
+        go_home();
+        clear_display();
+    }
+
+    // Display intro message on LCD
+    introMessage();
+
+    /*
+    // Flash led to tell finish init
+    for (int i = 0; i < 5; i++) {
+        PORTB |= _BV(PB5);
+        _delay_ms(50);
+        PORTB &= ~(_BV(PB5));
+        _delay_ms(50);
+    }
+    */
+
     normalModeMessage();
     while(1) {  
-        wdt_reset(); // Reset Watchdog timer to avoid reset
         usbPoll(); // Listen to host
 
-        if(mode==NORMAL) {
+        if(mode == NORMAL) {
             if (!(BTN_CONFIG_PIN >> BTN_CONFIG)) { // If the button is pressed
-                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)) wdt_reset(); // Wait for its release
+                while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
                 configModeMessage();
                 mode = CONFIG;
             }
 
             // TODO: change for pressedKey?
-            btnPress = poll_btns();
+            pressedKey = (uint) poll_btns();
             // TODO: send signal to host of the pressed key
 
         } else {
             flag = 0;
             while(poll(BTN_CONFIG_PIN, BTN_CONFIG)) {
-                wdt_reset();
                 if (!flag) {
                     // Wait until user has pressed a key
-                    while( (btnPress = poll_btns()) == -1) wdt_reset();
+                    while( (btnPress = poll_btns()) == -1);
 
                     // Read value from eeprom -> stored in eepromAux[0]
                     eeprom_key_value(btnPress);
@@ -340,7 +316,7 @@ int main() {
                     updateCurrentConfig(nums[btnPress],alphaIndex,alpha);
                 }
             }
-            while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)) wdt_reset(); // Wait for its release
+            while(!poll(BTN_CONFIG_PIN, BTN_CONFIG)); // Wait for its release
             _delay_us(20); // Bounce-back delay
 
             // Write on eeprom

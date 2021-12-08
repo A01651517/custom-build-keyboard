@@ -2,7 +2,6 @@ void introMessage(){
     write_str((unsigned char *)"   Teklados   ");
     go_to(1,0);
     write_str((unsigned char *)"   Mecanicos   ");
-    wdt_reset();
     _delay_ms(1000);
     clear_display();
     go_home();
@@ -21,9 +20,7 @@ void configModeMessage(){
     write_str((unsigned char *)"     Config     ");
     go_to(1,0);
     write_str((unsigned char *)"      Mode     ");
-    wdt_reset();
     _delay_ms(1000);
-    wdt_reset();
     clear_display();
     go_home();    
     write_str((unsigned char *)" Press any key ");
